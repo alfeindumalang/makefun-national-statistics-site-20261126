@@ -1,123 +1,120 @@
-// Grafik SVG NusaData, digambar langsung dari angka — tanpa pustaka luar.
+// NusaData — grafik SVG tanpa pustaka luar.
 //
-// Tiga pembuat di sini: kolom (untuk deret tahunan), garis (untuk deret
-// bulanan atau triwulanan), dan batang mendatar (untuk pangsa). Masing-masing
-// mengembalikan potongan SVG atau HTML yang bisa disisipkan ke halaman.
-// Setiap nilai juga muncul sebagai teks di dalam grafik, dan tiap elemen
-// membawa <title> supaya pembaca layar tetap mendapat angkanya. Tabel
-// pendamping di halaman yang sama memuat angka yang sama persis.
+// Dua jenis grafik saja, keduanya digambar dari deret [label, nilai]:
+// kolom (batang tegak, dipakai untuk deret tahunan) dan garis (dengan
+// area tipis di bawahnya, dipakai untuk deret bulanan dan triwulanan).
+// Sumbu tegaknya selalu memakai lima tanda: batas bawah, batas atas,
+// dan tiga titik di antaranya, supaya tiap grafik mudah dibandingkan.
 
-// Bulatkan batas atas sumbu ke angka yang enak dibaca.
-function roundUp(top) {
-  if (top <= 0) return 5;
-  const step = top <= 10 ? 1 : top <= 50 ? 5 : top <= 200 ? 10 : 50;
-  return Math.ceil(top / step) * step;
+import { angka } from "./data.js";
+
+// Ukuran kanvas dan ruang tepinya, dalam satuan viewBox.
+const LEBAR = 640;
+const TINGGI = 300;
+const TEPI_KIRI = 46;
+const TEPI_KANAN = 12;
+const TEPI_ATAS = 24;
+const TEPI_BAWAH = 30;
+
+// Lima tanda sumbu dari batas bawah sampai batas atas.
+export function tandaSumbu(bawah, atas) {
+  const langkah = (atas - bawah) / 4;
+  return [0, 1, 2, 3, 4].map((i) => bawah + i * langkah);
 }
 
-// Bulatkan batas bawah sumbu ke angka yang enak dibaca.
-function roundDown(bottom) {
-  if (bottom >= 0) return 0;
-  const step = bottom >= -10 ? 1 : 5;
-  return Math.floor(bottom / step) * step;
+// Fungsi posisi tegak: nilai menjadi koordinat y di dalam kanvas.
+function posisiY(nilai, bawah, atas) {
+  const tinggiGambar = TINGGI - TEPI_ATAS - TEPI_BAWAH;
+  return TEPI_ATAS + ((atas - nilai) / (atas - bawah)) * tinggiGambar;
 }
 
-// Tulis angka dengan koma desimal ala Indonesia.
-function idNum(value) {
-  return String(Math.round(value * 100) / 100).replace('.', ',');
+// Garis-garis mendatar beserta label angkanya di sisi kiri.
+function garisSumbu(bawah, atas) {
+  const lebarGambar = LEBAR - TEPI_KIRI - TEPI_KANAN;
+  return tandaSumbu(bawah, atas)
+    .map((tanda) => {
+      const y = posisiY(tanda, bawah, atas);
+      return (
+        `<line x1="${TEPI_KIRI}" y1="${y}" x2="${TEPI_KIRI + lebarGambar}" y2="${y}" stroke="#e6edf0" stroke-width="1" />` +
+        `<text x="${TEPI_KIRI - 8}" y="${y + 4}" text-anchor="end" font-size="12" fill="#68798a">${angka(tanda)}</text>`
+      );
+    })
+    .join("");
 }
 
-// Garis-garis grid mendatar beserta label nilainya.
-function gridLines(padLeft, padTop, plotW, plotH, low, span, width) {
-  return [0, 0.25, 0.5, 0.75, 1].map((f) => {
-    const v = low + f * span;
-    const y = padTop + ((1 - f) * plotH);
-    return `<line x1="${padLeft}" y1="${y.toFixed(1)}" x2="${padLeft + plotW}" y2="${y.toFixed(1)}" stroke="#dde5ec" stroke-width="1"/>`
-      + `<text x="${padLeft - 7}" y="${(y + 4).toFixed(1)}" text-anchor="end" font-size="11" fill="#68798a">${idNum(v)}</text>`;
-  }).join('');
+// Garis nol yang lebih tegas, bila nol berada di dalam rentang.
+function garisNol(bawah, atas) {
+  if (bawah >= 0 || atas <= 0) return "";
+  const y = posisiY(0, bawah, atas);
+  const lebarGambar = LEBAR - TEPI_KIRI - TEPI_KANAN;
+  return `<line x1="${TEPI_KIRI}" y1="${y}" x2="${TEPI_KIRI + lebarGambar}" y2="${y}" stroke="#c3d2da" stroke-width="1.5" />`;
 }
 
-// Grafik kolom. points: [{ label, value }].
-export function columnChart(points, opts = {}) {
-  const width = 640;
-  const height = opts.height ?? 260;
-  const left = 46;
-  const right = 14;
-  const topPad = 28;
-  const bottomPad = 32;
-  const vals = points.map((p) => p.value);
-  const high = roundUp(Math.max(...vals, 0.1));
-  const low = roundDown(Math.min(...vals, 0));
-  const span = high - low;
-  const plotW = width - left - right;
-  const plotH = height - topPad - bottomPad;
-  const zeroY = topPad + ((high - 0) / span) * plotH;
-  const slot = plotW / points.length;
-  const colW = Math.min(44, slot * 0.6);
-  const up = opts.color ?? '#0f766e';
-  const down = opts.negativeColor ?? '#b91c1c';
-
-  let columns = '';
-  points.forEach((p, i) => {
-    const x = left + i * slot + (slot - colW) / 2;
-    const isNeg = p.value < 0;
-    const y = isNeg ? zeroY : topPad + ((high - p.value) / span) * plotH;
-    const h = (Math.abs(p.value) / span) * plotH;
-    columns += `<rect x="${x.toFixed(1)}" y="${y.toFixed(1)}" width="${colW.toFixed(1)}" height="${Math.max(h, 1).toFixed(1)}" rx="3" fill="${isNeg ? down : up}"><title>${p.label}: ${idNum(p.value)}</title></rect>`;
-    columns += `<text x="${(x + colW / 2).toFixed(1)}" y="${(y - 7).toFixed(1)}" text-anchor="middle" font-size="12" fill="#17222e">${idNum(p.value)}</text>`;
-    columns += `<text x="${(x + colW / 2).toFixed(1)}" y="${(height - 11).toFixed(1)}" text-anchor="middle" font-size="12" fill="#4c5d6d">${p.label}</text>`;
-  });
-
-  return `<svg viewBox="0 0 ${width} ${height}" role="img" aria-label="Grafik kolom" xmlns="http://www.w3.org/2000/svg">`
-    + gridLines(left, topPad, plotW, plotH, low, span, width)
-    + `<line x1="${left}" y1="${zeroY.toFixed(1)}" x2="${width - right}" y2="${zeroY.toFixed(1)}" stroke="#94a3b8" stroke-width="1"/>`
-    + columns + `</svg>`;
+// Grafik kolom: satu batang per titik. Batang negatif (misalnya
+// kontraksi 2020) digambar ke bawah dari garis nol dengan warna merah.
+export function grafikKolom(deret, { bawah, atas, warna = "#0f766e", warnaNegatif = "#b91c1c" }) {
+  const jumlah = deret.length;
+  const lebarSlot = (LEBAR - TEPI_KIRI - TEPI_KANAN) / jumlah;
+  const lebarBatang = Math.min(48, lebarSlot * 0.62);
+  const yNol = posisiY(0, bawah, atas);
+  const batang = deret
+    .map(([label, nilai], i) => {
+      const tengah = TEPI_KIRI + lebarSlot * (i + 0.5);
+      const yNilai = posisiY(nilai, bawah, atas);
+      const atasBatang = Math.min(yNilai, yNol);
+      const tinggiBatang = Math.abs(yNilai - yNol);
+      const labelY = Math.min(yNilai, yNol) - 7;
+      return (
+        `<rect x="${(tengah - lebarBatang / 2).toFixed(1)}" y="${atasBatang.toFixed(1)}" ` +
+        `width="${lebarBatang.toFixed(1)}" height="${Math.max(tinggiBatang, 1).toFixed(1)}" rx="3" ` +
+        `fill="${nilai < 0 ? warnaNegatif : warna}" />` +
+        `<text x="${tengah.toFixed(1)}" y="${labelY.toFixed(1)}" text-anchor="middle" font-size="13" font-weight="700" fill="#17222e">${angka(nilai)}</text>` +
+        `<text x="${tengah.toFixed(1)}" y="${TINGGI - 8}" text-anchor="middle" font-size="12" fill="#68798a">${label}</text>`
+      );
+    })
+    .join("");
+  return (
+    `<svg viewBox="0 0 ${LEBAR} ${TINGGI}" role="img" xmlns="http://www.w3.org/2000/svg">` +
+    garisSumbu(bawah, atas) + garisNol(bawah, atas) + batang +
+    `</svg>`
+  );
 }
 
-// Grafik garis. points: [{ label, value }].
-export function trendChart(points, opts = {}) {
-  const width = 640;
-  const height = opts.height ?? 260;
-  const left = 46;
-  const right = 18;
-  const topPad = 28;
-  const bottomPad = 32;
-  const vals = points.map((p) => p.value);
-  const high = roundUp(Math.max(...vals));
-  const low = roundDown(Math.min(...vals));
-  const span = high - low || 1;
-  const plotW = width - left - right;
-  const plotH = height - topPad - bottomPad;
-  const color = opts.color ?? '#0f766e';
-
-  const xy = points.map((p, i) => ({
-    x: left + (i / Math.max(points.length - 1, 1)) * plotW,
-    y: topPad + ((high - p.value) / span) * plotH,
-    p,
+// Grafik garis: titik-titik dihubungkan satu garis, dengan area tipis
+// di bawah garis dan lingkaran kecil di tiap titik. Label nilai duduk
+// di atas titiknya, label kategori di bawah sumbu.
+export function grafikGaris(deret, { bawah, atas, warna = "#15803d" }) {
+  const jumlah = deret.length;
+  const lebarSlot = (LEBAR - TEPI_KIRI - TEPI_KANAN) / jumlah;
+  const titik = deret.map(([label, nilai], i) => ({
+    label,
+    nilai,
+    x: TEPI_KIRI + lebarSlot * (i + 0.5),
+    y: posisiY(nilai, bawah, atas),
   }));
-  const path = xy.map((pt, i) => `${i === 0 ? 'M' : 'L'}${pt.x.toFixed(1)},${pt.y.toFixed(1)}`).join(' ');
-  const fill = opts.area === false ? '' : `<path d="${path} L${xy[xy.length - 1].x.toFixed(1)},${(topPad + plotH).toFixed(1)} L${xy[0].x.toFixed(1)},${(topPad + plotH).toFixed(1)} Z" fill="${color}" opacity="0.08"/>`;
-  const dots = xy.map((pt) => `<circle cx="${pt.x.toFixed(1)}" cy="${pt.y.toFixed(1)}" r="4" fill="#ffffff" stroke="${color}" stroke-width="2"><title>${pt.p.label}: ${idNum(pt.p.value)}</title></circle>`).join('');
-  const values = xy.map((pt) => `<text x="${pt.x.toFixed(1)}" y="${(pt.y - 11).toFixed(1)}" text-anchor="middle" font-size="12" fill="#17222e">${idNum(pt.p.value)}</text>`).join('');
-  const labels = xy.map((pt, i) => {
-    const anchor = i === 0 ? 'start' : i === xy.length - 1 ? 'end' : 'middle';
-    return `<text x="${pt.x.toFixed(1)}" y="${(height - 11).toFixed(1)}" text-anchor="${anchor}" font-size="12" fill="#4c5d6d">${pt.p.label}</text>`;
-  }).join('');
-
-  return `<svg viewBox="0 0 ${width} ${height}" role="img" aria-label="Grafik garis" xmlns="http://www.w3.org/2000/svg">`
-    + gridLines(left, topPad, plotW, plotH, low, span, width)
-    + fill
-    + `<path d="${path}" fill="none" stroke="${color}" stroke-width="2.5" stroke-linejoin="round" stroke-linecap="round"/>`
-    + dots + values + labels + `</svg>`;
-}
-
-// Batang mendatar untuk pangsa (misalnya pangsa sektor terhadap PDB).
-// rows: [{ name, share }]. Mengembalikan HTML.
-export function shareBars(rows, opts = {}) {
-  const color = opts.color ?? '#0f766e';
-  const biggest = Math.max(...rows.map((r) => r.share));
-  return rows.map((r) => {
-    const pct = ((r.share / biggest) * 100).toFixed(1);
-    return `<div class="share"><div class="share-row"><span>${r.name}</span><strong>${idNum(r.share)}%</strong></div>`
-      + `<div class="share-track"><div class="share-fill" style="width:${pct}%;background:${color}"></div></div></div>`;
-  }).join('');
+  const yNol = posisiY(0, bawah, atas);
+  const garis = titik.map((p, i) => `${i === 0 ? "M" : "L"}${p.x.toFixed(1)},${p.y.toFixed(1)}`).join(" ");
+  const area = `${garis} L${titik[titik.length - 1].x.toFixed(1)},${yNol.toFixed(1)} ` +
+    `L${titik[0].x.toFixed(1)},${yNol.toFixed(1)} Z`;
+  const lingkaran = titik
+    .map((p) => `<circle cx="${p.x.toFixed(1)}" cy="${p.y.toFixed(1)}" r="4" fill="#ffffff" stroke="${warna}" stroke-width="2" />`)
+    .join("");
+  const labelNilai = titik
+    .map((p) =>
+      `<text x="${p.x.toFixed(1)}" y="${(p.y - 10).toFixed(1)}" text-anchor="middle" font-size="13" font-weight="700" fill="#17222e">${angka(p.nilai)}</text>`,
+    )
+    .join("");
+  const labelKategori = titik
+    .map((p) =>
+      `<text x="${p.x.toFixed(1)}" y="${TINGGI - 8}" text-anchor="middle" font-size="12" fill="#68798a">${p.label}</text>`,
+    )
+    .join("");
+  return (
+    `<svg viewBox="0 0 ${LEBAR} ${TINGGI}" role="img" xmlns="http://www.w3.org/2000/svg">` +
+    garisSumbu(bawah, atas) + garisNol(bawah, atas) +
+    `<path d="${area}" fill="${warna}" fill-opacity="0.08" />` +
+    `<path d="${garis}" fill="none" stroke="${warna}" stroke-width="2.5" stroke-linejoin="round" stroke-linecap="round" />` +
+    lingkaran + labelNilai + labelKategori +
+    `</svg>`
+  );
 }

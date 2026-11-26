@@ -1,48 +1,51 @@
-// NusaData — program penyerahan entry (Node 22, pustaka standar saja).
+// NusaData — program penyerahan entri make.fun.
 //
-// Situsnya sudah jadi sebagai berkas statis di app/ (halaman, gaya, dan
-// skripnya), dan potret layarnya ada di screenshots/. Program ini hanya
-// bertugas menyerahkannya: menyalin kedua folder itu ke direktori keluaran
-// lalu menulis dossier.json di sana, memakai pustaka vendored make.fun.
-// vendor/makefun-frontend.ts dibiarkan apa adanya — pemeriksa membangun
-// ulang dossier dengan pustaka yang sama dan membandingkannya byte demi
-// byte dengan yang program ini tulis.
+// Menyalin situs (app/) dan potret layarnya (screenshots/) dari repo
+// ini ke direktori keluaran, lalu menulis dossier.json dengan
+// buildDossier dari pustaka make.fun. Dijalankan dua kali oleh grader;
+// kedua jalan harus menulis byte yang sama.
 //
-// Di luar grader, MAKEFUN_OUTPUT_DIR menggantikan /output:
-//   mkdir -p out && MAKEFUN_OUTPUT_DIR=out node main.ts
+//   MAKEFUN_OUTPUT_DIR=out node main.ts
+//
+// Tanpa variabel itu, keluarannya ditulis ke /output. Hanya pustaka
+// standar Node yang dipakai; tidak ada jaringan, tidak ada jam.
 
-import { cpSync, existsSync, mkdirSync, writeFileSync } from 'node:fs';
-import { join } from 'node:path';
-import { fileURLToPath } from 'node:url';
-import { buildDossier } from './vendor/makefun-frontend.ts';
+import { cpSync, existsSync, mkdirSync, rmSync, writeFileSync } from "node:fs";
+import { dirname, join } from "node:path";
+import { fileURLToPath } from "node:url";
+import { buildDossier } from "./vendor/makefun-frontend.ts";
 
-const repoRoot = fileURLToPath(new URL('.', import.meta.url));
-const outputDir = process.env.MAKEFUN_OUTPUT_DIR ?? '/output';
+// Repo ini: direktori tempat main.ts berada.
+const repo = dirname(fileURLToPath(import.meta.url));
 
-// Batas-batas yang dipakai pemeriksa (lihat RULES.txt di kit): teks dossier
-// dibatasi 160 KiB, paling banyak 4 potret layar @ 256 KiB, app/ paling
-// banyak 993 berkas dan direktori dengan total 16 MiB.
-const DOSSIER_LIMITS = {
+// Direktori keluaran: dari lingkungan, atau /output bila tidak diset.
+const keluaran = process.env.MAKEFUN_OUTPUT_DIR ?? "/output";
+
+// Batas-batas gerbang bounty ini, seperti yang dipakai pemeriksanya.
+const BATAS = {
   text_max_bytes: 163840,
   screenshots: { max: 4, max_bytes: 262144 },
   app_max_files: 993,
   app_max_bytes: 16777216,
+  app_path_max_bytes: 1000,
 };
 
-function syncFolder(name) {
-  const from = join(repoRoot, name);
-  const to = join(outputDir, name);
-  mkdirSync(to, { recursive: true });
-  if (existsSync(from)) cpSync(from, to, { recursive: true });
+// Bersihkan keluaran lama supaya tidak ada berkas sisa yang terbawa.
+rmSync(keluaran, { recursive: true, force: true });
+mkdirSync(keluaran, { recursive: true });
+
+// Salin situs dan potret layarnya apa adanya. Gagal dengan pesan
+// yang jelas bila salah satu direktorinya tidak ada, supaya jalan
+// yang gagal tidak menulis keluaran setengah jadi.
+for (const nama of ["app", "screenshots"]) {
+  if (!existsSync(join(repo, nama))) {
+    throw new Error(`direktori ${nama}/ tidak ditemukan di ${repo}`);
+  }
 }
+cpSync(join(repo, "app"), join(keluaran, "app"), { recursive: true });
+cpSync(join(repo, "screenshots"), join(keluaran, "screenshots"), { recursive: true });
 
-mkdirSync(outputDir, { recursive: true });
-syncFolder('app');
-syncFolder('screenshots');
-
-const dossierPath = join(outputDir, 'dossier.json');
-writeFileSync(dossierPath, buildDossier(outputDir, DOSSIER_LIMITS));
-
-// Ringkasan singkat di akhir, supaya dua run yang berbeda isinya
-// langsung terlihat bila ada yang berubah.
-console.log(`dossier ditulis: ${dossierPath}`);
+// Tulis dossier yang sama seperti yang ditulis pemeriksa dari berkas ini.
+const dossier = buildDossier(keluaran, BATAS);
+writeFileSync(join(keluaran, "dossier.json"), dossier);
+console.log(`dossier.json ditulis: ${dossier.length} byte ke ${keluaran}`);
